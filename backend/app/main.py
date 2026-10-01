@@ -1,6 +1,6 @@
 """FastAPI application entrypoint and global exception handlers.
 
-Implements the shared error shape and global validation exception handlers
+Implements the shared error shape, report query, and global validation exception handlers
 as specified in DESIGN.md section 5, 7.
 """
 
@@ -11,11 +11,15 @@ from fastapi import Depends, FastAPI, Header, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db
+from app.models import Report, ReportEvent
 from app.schemas import (
     ErrorResponse,
+    ReportDetailResponse,
+    ReportEventResponse,
     ReportPutRequest,
     ReportResponse,
     TransitionRequest,
@@ -166,6 +170,80 @@ async def invalid_transition_exception_handler(
             "message": exc.message,
             "fields": {},
         },
+    )
+
+
+@app.get(
+    "/reports",
+    response_model=list[ReportResponse],
+    responses={
+        200: {"model": list[ReportResponse], "description": "List of reports matching filters"},
+    },
+)
+def get_reports(
+    status: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    ids: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """List reports with optional filters, ordered newest first (DESIGN section 5)."""
+    query = select(Report)
+    if status:
+        query = query.where(Report.status == status)
+    if priority:
+        query = query.where(Report.priority == priority)
+    if category:
+        query = query.where(Report.category == category)
+    if ids:
+        id_list = [i.strip() for i in ids.split(",") if i.strip()]
+        if id_list:
+            query = query.where(Report.id.in_(id_list))
+    query = query.order_by(Report.reported_at.desc())
+    return db.execute(query).scalars().all()
+
+
+@app.get(
+    "/reports/{report_id}",
+    response_model=ReportDetailResponse,
+    responses={
+        200: {"model": ReportDetailResponse, "description": "Report with ordered audit history"},
+        404: {"model": ErrorResponse, "description": "Report not found"},
+    },
+)
+def get_report_detail(
+    report_id: str,
+    db: Session = Depends(get_db),
+):
+    """Retrieve a single report and its event history in time order (DESIGN section 5)."""
+    report = db.execute(select(Report).where(Report.id == report_id)).scalar_one_or_none()
+    if report is None:
+        raise ReportNotFoundException(f"Report '{report_id}' was not found.")
+
+    events = (
+        db.execute(
+            select(ReportEvent)
+            .where(ReportEvent.report_id == report_id)
+            .order_by(ReportEvent.occurred_at.asc())
+        )
+        .scalars()
+        .all()
+    )
+
+    return ReportDetailResponse(
+        id=report.id,
+        category=report.category,
+        description=report.description,
+        location_text=report.location_text,
+        latitude=report.latitude,
+        longitude=report.longitude,
+        priority=report.priority,
+        status=report.status,
+        reporter_name=report.reporter_name,
+        reported_at=report.reported_at,
+        received_at=report.received_at,
+        updated_at=report.updated_at,
+        events=[ReportEventResponse.model_validate(e) for e in events],
     )
 
 
