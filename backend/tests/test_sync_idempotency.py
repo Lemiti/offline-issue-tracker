@@ -18,6 +18,7 @@ from app.database import get_db
 from app.main import app
 from app.models import Base, Report, ReportEvent
 from app.schemas import ReportPutRequest
+import app.service as service
 from app.service import sync_report
 
 
@@ -201,16 +202,71 @@ def test_simulated_integrity_error_race_resolves_to_200(test_db: Session):
     payload_dict = make_payload(report_id)
     req = ReportPutRequest(**payload_dict)
 
-    # First delivery succeeds normally
+    # First delivery succeeds normally (inserts report and 2 client events + 1 sync event)
     code1, rep1 = sync_report(test_db, report_id, req)
     assert code1 == 201
 
-    # Simulate race: a concurrent worker just inserted report_id right as this worker flushed
-    with patch.object(
-        test_db,
-        "flush",
-        side_effect=IntegrityError("mock UNIQUE constraint failed: reports.id", None, Exception()),
-    ):
+    real_find_report = service._find_report
+
+    class SideEffectList(list):
+        """Side-effect list that returns None on the first call, then calls the real helper."""
+
+        def __iter__(self):
+            self._idx = 0
+            return self
+
+        def __next__(self):
+            if self._idx < len(self):
+                val = self[self._idx]
+                self._idx += 1
+                if callable(val):
+                    return val(test_db, report_id)
+                return val
+            raise StopIteration
+
+        def __call__(self, *args, **kwargs):
+            if self:
+                val = self.pop(0)
+                if callable(val):
+                    return val(*args, **kwargs)
+                return val
+            return real_find_report(*args, **kwargs)
+
+    # Simulate race: report exists in database, but the FIRST call to the lookup helper returns None.
+    # The subsequent insert attempt hits the real unique-constraint IntegrityError on flush,
+    # triggering the rollback and recovery re-read branch in sync_report.
+    side_effects = SideEffectList([None, real_find_report])
+    with patch.object(service, "_find_report", side_effect=side_effects):
         code2, rep2 = sync_report(test_db, report_id, req)
-        assert code2 == 200
-        assert rep2.id == report_id
+
+    # 1. Assert sync_report returns status 200 and the stored report
+    assert code2 == 200
+    assert rep2.id == report_id
+    assert rep2.description == payload_dict["description"]
+
+    # 2. Assert exactly one report row exists in the database
+    reports = test_db.execute(select(Report).where(Report.id == report_id)).scalars().all()
+    assert len(reports) == 1
+    assert reports[0].id == report_id
+
+    # 3. Assert client events and server 'synchronized' event were not duplicated
+    events = (
+        test_db.execute(select(ReportEvent).where(ReportEvent.report_id == report_id))
+        .scalars()
+        .all()
+    )
+    assert len(events) == 3
+    event_types = {e.type for e in events}
+    assert event_types == {"created", "submitted", "synchronized"}
+
+    sync_events = [e for e in events if e.type == "synchronized"]
+    assert len(sync_events) == 1
+
+    for ce in req.client_events:
+        matching_events = [e for e in events if e.id == ce.id]
+        assert len(matching_events) == 1
+
+    # 4. Assert the database session is still usable afterwards
+    stored_check = test_db.execute(select(Report).where(Report.id == report_id)).scalar_one_or_none()
+    assert stored_check is not None
+    test_db.commit()

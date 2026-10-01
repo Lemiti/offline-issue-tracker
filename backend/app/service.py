@@ -120,6 +120,11 @@ def _has_identical_content(report: Report, payload: ReportPutRequest) -> bool:
     return True
 
 
+def _find_report(db: Session, report_id: str) -> Report | None:
+    """Find a report by its UUID."""
+    return db.execute(select(Report).where(Report.id == report_id)).scalar_one_or_none()
+
+
 def sync_report(
     db: Session,
     report_id: str,
@@ -134,7 +139,7 @@ def sync_report(
     3. Existing id with different content: raise IdContentMismatchException (HTTP 409).
     4. Concurrent duplicate insert: catch IntegrityError on commit, re-read and handle as case 2.
     """
-    existing = db.execute(select(Report).where(Report.id == report_id)).scalar_one_or_none()
+    existing = _find_report(db, report_id)
 
     if existing is not None:
         if _has_identical_content(existing, payload):
@@ -208,7 +213,7 @@ def sync_report(
     except IntegrityError:
         db.rollback()
         # Concurrent collision recovery (case 4): re-read and handle idempotently
-        recovered = db.execute(select(Report).where(Report.id == report_id)).scalar_one_or_none()
+        recovered = _find_report(db, report_id)
         if recovered is not None:
             if _has_identical_content(recovered, payload):
                 return 200, recovered
