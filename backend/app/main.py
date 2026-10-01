@@ -7,7 +7,7 @@ as specified in DESIGN.md section 5, 7.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, Request, Response, status
+from fastapi import Depends, FastAPI, Header, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -18,9 +18,19 @@ from app.schemas import (
     ErrorResponse,
     ReportPutRequest,
     ReportResponse,
+    TransitionRequest,
     format_validation_error_fields,
 )
-from app.service import IdContentMismatchException, sync_report
+from app.service import (
+    ForbiddenRoleException,
+    IdContentMismatchException,
+    InvalidTransitionException,
+    ReasonRequiredException,
+    ReportNotFoundException,
+    StaleStatusException,
+    sync_report,
+    transition_report,
+)
 
 
 @asynccontextmanager
@@ -84,6 +94,81 @@ async def id_content_mismatch_exception_handler(
     )
 
 
+@app.exception_handler(ReportNotFoundException)
+async def report_not_found_exception_handler(
+    request: Request, exc: ReportNotFoundException
+) -> JSONResponse:
+    """Handle 404 REPORT_NOT_FOUND when requested report is missing."""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "code": "REPORT_NOT_FOUND",
+            "message": exc.message,
+            "fields": {},
+        },
+    )
+
+
+@app.exception_handler(ForbiddenRoleException)
+async def forbidden_role_exception_handler(
+    request: Request, exc: ForbiddenRoleException
+) -> JSONResponse:
+    """Handle 403 FORBIDDEN_ROLE when role is unauthorized."""
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={
+            "code": "FORBIDDEN_ROLE",
+            "message": exc.message,
+            "fields": {},
+        },
+    )
+
+
+@app.exception_handler(ReasonRequiredException)
+async def reason_required_exception_handler(
+    request: Request, exc: ReasonRequiredException
+) -> JSONResponse:
+    """Handle 422 REASON_REQUIRED when rejection reason is missing."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "code": "REASON_REQUIRED",
+            "message": exc.message,
+            "fields": {"reason": exc.message},
+        },
+    )
+
+
+@app.exception_handler(StaleStatusException)
+async def stale_status_exception_handler(
+    request: Request, exc: StaleStatusException
+) -> JSONResponse:
+    """Handle 409 STALE_STATUS for concurrent coordinator conflicts."""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "code": "STALE_STATUS",
+            "message": exc.message,
+            "fields": {},
+        },
+    )
+
+
+@app.exception_handler(InvalidTransitionException)
+async def invalid_transition_exception_handler(
+    request: Request, exc: InvalidTransitionException
+) -> JSONResponse:
+    """Handle 409 INVALID_TRANSITION when transition is illegal in workflow."""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "code": "INVALID_TRANSITION",
+            "message": exc.message,
+            "fields": {},
+        },
+    )
+
+
 @app.put(
     "/reports/{report_id}",
     response_model=ReportResponse,
@@ -104,3 +189,24 @@ def put_report(
     status_code, report = sync_report(db, report_id, payload)
     response.status_code = status_code
     return report
+
+
+@app.post(
+    "/reports/{report_id}/transition",
+    response_model=ReportResponse,
+    responses={
+        200: {"model": ReportResponse, "description": "Status updated successfully"},
+        403: {"model": ErrorResponse, "description": "Forbidden role"},
+        404: {"model": ErrorResponse, "description": "Report not found"},
+        409: {"model": ErrorResponse, "description": "Stale status or invalid transition"},
+        422: {"model": ErrorResponse, "description": "Reason required or validation error"},
+    },
+)
+def post_transition(
+    report_id: str,
+    payload: TransitionRequest,
+    x_role: str | None = Header(default=None, alias="X-Role"),
+    db: Session = Depends(get_db),
+):
+    """Execute status transition on an existing report (DESIGN section 4, 5)."""
+    return transition_report(db, report_id, payload, x_role)

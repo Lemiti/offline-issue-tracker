@@ -281,6 +281,16 @@ class ReportDetailResponse(ReportResponse):
     events: list[ReportEventResponse] = Field(default_factory=list)
 
 
+class TransitionRequest(BaseModel):
+    """Payload for POST /reports/{id}/transition."""
+
+    to: Status | str = Field(..., description="Target status")
+    reason: str | None = Field(default=None, description="Optional or mandatory reason")
+    expected_status: Status | str = Field(
+        ..., description="Expected current status to detect concurrent updates"
+    )
+
+
 def format_validation_error_fields(
     errors: list[dict[str, Any]],
 ) -> dict[str, str]:

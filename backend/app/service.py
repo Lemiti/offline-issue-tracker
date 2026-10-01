@@ -1,6 +1,6 @@
 """Service layer handling idempotent report synchronization and history management.
 
-Implements requirements from SRS FR-SYN-5, FR-HIS-1..5 and DESIGN sections 3.1, 5, 6.3.
+Implements requirements from SRS FR-SYN-5, FR-HIS-1..5, FR-WFL-1..6 and DESIGN sections 3.1, 4, 5, 6.3.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Report, ReportEvent
-from app.schemas import ReportPutRequest
-from app.workflow import Status
+from app.schemas import ReportPutRequest, TransitionRequest
+from app.workflow import Role, Status, WorkflowErrorCode, validate_transition
 
 
 class IdContentMismatchException(Exception):
@@ -25,6 +25,46 @@ class IdContentMismatchException(Exception):
         self,
         message: str = "A report with this ID already exists with different content.",
     ):
+        self.message = message
+        super().__init__(self.message)
+
+
+class ReportNotFoundException(Exception):
+    """Raised when a requested report ID does not exist."""
+
+    def __init__(self, message: str = "Report not found."):
+        self.message = message
+        super().__init__(self.message)
+
+
+class ForbiddenRoleException(Exception):
+    """Raised when a role is unauthorized for an action."""
+
+    def __init__(self, message: str = "Role is not authorized for this operation."):
+        self.message = message
+        super().__init__(self.message)
+
+
+class ReasonRequiredException(Exception):
+    """Raised when a transition requires a reason that was not provided."""
+
+    def __init__(self, message: str = "A non-empty reason is required for this transition."):
+        self.message = message
+        super().__init__(self.message)
+
+
+class StaleStatusException(Exception):
+    """Raised when the expected status does not match current database status."""
+
+    def __init__(self, message: str = "Report status has changed."):
+        self.message = message
+        super().__init__(self.message)
+
+
+class InvalidTransitionException(Exception):
+    """Raised when a requested transition is not permitted by workflow rules."""
+
+    def __init__(self, message: str = "Invalid status transition."):
         self.message = message
         super().__init__(self.message)
 
@@ -176,3 +216,112 @@ def sync_report(
                 f"Report '{report_id}' already exists with different content."
             )
         raise
+
+
+def transition_report(
+    db: Session,
+    report_id: str,
+    payload: TransitionRequest,
+    role: str | None,
+) -> Report:
+    """Execute a status transition within a single database transaction.
+
+    Enforces:
+    1. Unknown ID -> 404
+    2. Missing or unauthorized role -> 403
+    3. Stale expected_status -> 409 STALE_STATUS
+    4. Workflow transition rules (via app/workflow.py):
+       - Wrong role -> 403 FORBIDDEN_ROLE
+       - Missing reason -> 422 REASON_REQUIRED
+       - Invalid transition -> write 'transition_rejected' event, commit, return 409 INVALID_TRANSITION
+       - Success -> update report status and updated_at, write 'status_changed' event, commit, return report
+    """
+    report = db.execute(select(Report).where(Report.id == report_id)).scalar_one_or_none()
+    if report is None:
+        raise ReportNotFoundException(f"Report '{report_id}' was not found.")
+
+    if not role or role not in [r.value for r in Role]:
+        raise ForbiddenRoleException(
+            f"Role '{role}' is not valid. Must be 'field_worker' or 'coordinator'."
+        )
+
+    # Check stale status
+    exp_status = (
+        payload.expected_status.value
+        if hasattr(payload.expected_status, "value")
+        else str(payload.expected_status)
+    )
+    if report.status != exp_status:
+        raise StaleStatusException(
+            f"Report status has changed. Expected '{exp_status}', but current status is '{report.status}'."
+        )
+
+    target_status = (
+        payload.to.value if hasattr(payload.to, "value") else str(payload.to)
+    )
+
+    result = validate_transition(
+        current_status=report.status,
+        target_status=target_status,
+        role=role,
+        reason=payload.reason,
+    )
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+
+    if not result.success:
+        if result.error_code == WorkflowErrorCode.FORBIDDEN_ROLE:
+            raise ForbiddenRoleException(
+                result.message or f"Role '{role}' is forbidden from performing this transition."
+            )
+        if result.error_code == WorkflowErrorCode.REASON_REQUIRED:
+            raise ReasonRequiredException(
+                result.message or "A reason is required to reject this report."
+            )
+        if result.error_code == WorkflowErrorCode.INVALID_TRANSITION:
+            # Leave report unchanged, but write a transition_rejected event and commit it (FR-WFL-3)
+            rejected_event = ReportEvent(
+                id=str(uuid.uuid4()),
+                report_id=report_id,
+                type="transition_rejected",
+                actor_role=role,
+                occurred_at=now_utc,
+                recorded_at=now_utc,
+                details={
+                    "from": report.status,
+                    "to": target_status,
+                    "reason": payload.reason,
+                    "role": role,
+                    "error": result.message,
+                },
+            )
+            db.add(rejected_event)
+            db.commit()
+            raise InvalidTransitionException(
+                result.message
+                or f"Transition from '{report.status}' to '{target_status}' is not permitted."
+            )
+
+    # On success: update status and updated_at, write status_changed event
+    old_status = report.status
+    report.status = target_status
+    report.updated_at = now_utc
+
+    event = ReportEvent(
+        id=str(uuid.uuid4()),
+        report_id=report_id,
+        type="status_changed",
+        actor_role=role,
+        occurred_at=now_utc,
+        recorded_at=now_utc,
+        details={
+            "from": old_status,
+            "to": target_status,
+            "reason": payload.reason,
+            "role": role,
+        },
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(report)
+    return report
