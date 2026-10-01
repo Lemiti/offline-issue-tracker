@@ -44,10 +44,25 @@ async def lifespan(app: FastAPI):
     yield
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="Offline Field Issue Tracker",
     description="Central record backend for offline-first field problem reporting.",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -171,6 +186,15 @@ async def invalid_transition_exception_handler(
             "fields": {},
         },
     )
+
+
+@app.get(
+    "/health",
+    responses={200: {"description": "Server health status"}},
+)
+def health():
+    """Connectivity health check endpoint (DESIGN section 5)."""
+    return {"status": "ok"}
 
 
 @app.get(
