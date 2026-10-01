@@ -237,20 +237,24 @@ UI rendering is verified through the manual checklist rather than heavy UI tests
 - Multiple devices sharing one worker identity are not modelled.
 - Clock differences between a device and the server can affect `reported_at` plausibility checks (a small tolerance is applied).
 - Browser connectivity signals are unreliable, so the app relies on real request outcomes.
-- <!-- TODO: add any limitations you actually discover while building -->
 
 ---
 
 ## Time spent and future improvements
 
-**Approximate time spent:** <!-- TODO: fill in honestly, from your time log, e.g. "about 9 hours: requirements and design 1.5h, backend 2.5h, frontend 3h, tests 1h, documentation 1h" -->
+**Approximate time spent:** about 7 hours 20 minutes total (about 6.5 hours active working time, excluding two break sessions of ~20 min and ~25 min):
+- Requirements analysis & design (Phases 0–2): ~1.5 hours
+- Backend implementation & testing (Phase 3): ~1.5 hours
+- Frontend implementation & testing (Phase 4): ~40 minutes
+- Manual QA, offline debugging & CORS fix (Phase 5): ~1 hour 20 minutes
+- Code audit, bug fixes, hardening & documentation (Phase 6): ~1 hour 25 minutes
 
 **With more time:**
 - Real authentication and per-role authorisation
 - Post-submission editing with version-based conflict resolution (see above)
 - Similar-report detection for different workers
 - End-to-end browser tests (Playwright) for the offline scenarios
-- Service worker so the app shell itself loads offline
+- Full offline sync queue for coordinator role
 - Migrations (Alembic) and a production database
 - Photo attachments and device GPS capture
 - Pagination and search
@@ -261,20 +265,19 @@ UI rendering is verified through the manual checklist rather than heavy UI tests
 
 > Fill this in from your own AI-usage log. Be specific and truthful; reviewers evaluate honesty and understanding, not the absence of AI.
 
-**Tools used:** Claude (free), Google AI Pro / Gemini, ChatGPT (free), <!-- TODO: name the terminal coding agent you used -->
+**Tools used:** Claude (free), Antigravity CLI (`agy`) powered by Gemini
 
 **What I used them for**
-- Requirements analysis, drafting the SRS and design document: <!-- TODO: verify and describe what you changed -->
-- Code generation with a terminal agent: <!-- TODO: which parts, in which steps -->
-- Test ideas and code review: <!-- TODO -->
+- Requirements analysis, drafting the SRS and design document: Used Claude to analyze the assignment prompt, formulate clarification questions, draft the formal SRS (v1.0 and v1.1), and create the system design document based on the requirements.
+- Code generation with a terminal agent: Used Antigravity CLI (`agy`) as an interactive coding assistant. For each component (workflow state machine, database models, idempotent sync service, API endpoints, Dexie local store, headless sync engine, React UI components, and PWA configuration), I explained what I wanted to Claude, which evaluated my logic, suggested improvements/fixes, and prepared structured prompts. I then fed those prompts into `agy` to generate code and tests.
+- Test ideas and code review: Used Claude to evaluate implementation logic and identify gaps (e.g. invalid status transitions permitted in the UI, race-condition tests that never executed the catch block, weak test assertions, and inability for field workers to resume saved drafts). Then used `agy` to implement the fixes and write comprehensive test cases.
 
 **What I accepted, changed, and rejected**
-- Accepted: <!-- TODO -->
-- Changed: <!-- TODO e.g. "rewrote X because ..." -->
-- Rejected: <!-- TODO e.g. "agent proposed an ORM-wide soft delete; rejected as out of scope" -->
+- Accepted: The pure workflow state machine architecture (`backend/app/workflow.py`), the idempotent upsert logic with unique-constraint fallback handling, the headless sync engine structure with single-flight execution and exponential backoff, and Dexie IndexedDB schemas.
+- Changed: Refined prompts from Claude to strictly enforce boundary assertions instead of generic truthiness; modified the test suite to keep it modular and maintainable; updated draft management to allow workers to edit and update saved drafts prior to submission.
+- Rejected: Rejected coordinator "Reopen" action proposed in early UI drafts (since Resolved and Rejected are terminal states per SRS); rejected any soft-delete or multi-device sync logic as out of scope; rejected complex mock IndexedDB setups in favor of clean `fake-indexeddb` tests.
 
 **How I verified generated code**
-- Read every diff before committing; ran the automated tests; walked through the manual QA checklist; tested the lost-response and offline scenarios by hand.
-- <!-- TODO: add anything else you really did -->
+- Read every diff before committing; ran the automated tests (`pytest` for backend, `vitest` for frontend); walked through the manual QA checklist in both online and offline network states; tested lost-response and idempotent retry scenarios; verified production build (`npm run build`) and preview (`npm run demo`).
 
 I understand and take responsibility for all submitted code.

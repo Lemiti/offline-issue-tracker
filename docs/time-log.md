@@ -1,9 +1,24 @@
 # Time Log
 - **[9:15] - [9:45]**: Phase 0 Setup & Clarification Questions
-- **[9:50] - [10:35]**: Phase 1 SRS preparation
+- **[9:50] - [10:35]**: Phase 1 SRS preparation (requirements, business rules, assumptions)
 - **[10:35] - [10:46]**: Phase 2 Design document complete
-- **[11:15] - [11:40]**: Phase 3 Status workflow engine & test matrix (app/workflow.py, test_workflow.py)
+- **[10:50] - [11:10]**: Break session (~20 min)
+- **[11:15] - [11:40]**: Phase 3 Status workflow engine & test matrix (`app/workflow.py`, `test_workflow.py`)
 - **[11:40] - [12:15]**: Phase 3 Backend scaffolding, SQLAlchemy models, Pydantic validation schemas & 422 handler
 - **[12:15] - [12:22]**: Phase 3 Idempotent PUT sync service, race handling & sync idempotency tests
-- **[12:22] - [12:32]**: Phase 3 POST /transition endpoint, atomic status verification, audit events & transition tests
-- **[12:32] - [12:42]**: Phase 3 Report query endpoints (filters, ordering), demo data seeder (app/seed.py) & query tests
+- **[12:22] - [12:32]**: Phase 3 POST /reports/{id}/transition endpoint, atomic status verification, audit events & transition tests
+- **[12:32] - [12:45]**: Phase 3 Report query endpoints (filters, ordering), demo data seeder (`app/seed.py`) & query tests
+- **[12:45] - [12:57]**: Phase 4 Frontend scaffolding with Vite, React, TypeScript, Dexie DB schema & API client
+- **[12:57] - [13:10]**: Phase 4 Report form with local-first offline Draft & Submit persistence
+- **[13:10] - [13:16]**: Phase 4 Headless sync engine with single-flight queue, exponential backoff, retry & failure states
+- **[13:16] - [13:25]**: Phase 4 Report list, detail modal with history log, sync status badges & coordinator actions
+- **[13:25] - [14:05]**: Phase 5 Manual QA checklist execution & offline reload troubleshooting
+- **[14:05] - [14:30]**: Break session (~25 min)
+- **[14:30] - [15:10]**: Phase 5 Fix CORS headers, Coordinator View error recovery & Vite PWA offline app-shell caching
+- **[15:10] - [15:35]**: Phase 6 Review against SRS/DESIGN: remove invalid "Reopen" from coordinator UI & unit test transition table
+- **[15:35] - [15:45]**: Phase 6 Rewrite simulated race condition test to verify true IntegrityError recovery branch
+- **[15:45] - [15:50]**: Phase 6 Strengthen reported_at tolerance boundary tests and parsed model assertions
+- **[15:50] - [16:12]**: Phase 6 Enable editable drafts so field workers can resume and edit drafts before submission
+- **[16:12] - [16:20]**: Phase 6 Update SRS.md Section 6 Requirements Traceability with verified test references & gaps list
+- **[16:20] - [16:28]**: Phase 6 Codebase vs README audit; document sync edge case and known limitations
+- **[16:28] - [16:35]**: Phase 6 Finalize documentation: update time log, AI disclosure log, and README
