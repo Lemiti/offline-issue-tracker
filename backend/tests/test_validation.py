@@ -50,13 +50,39 @@ def test_valid_coordinates_both_none():
     payload["latitude"] = None
     payload["longitude"] = None
     req = ReportPutRequest(**payload)
-    assert req.latitude is None and req.longitude is None
+    assert req.latitude is None
+    assert req.longitude is None
 
 
-def test_valid_reported_at_within_five_minutes_tolerance():
+@pytest.mark.parametrize(
+    "minutes_offset, should_accept",
+    [
+        (1, True),
+        (4, True),
+        (6, False),
+    ],
+)
+def test_valid_reported_at_within_five_minutes_tolerance(
+    minutes_offset: int, should_accept: bool
+):
     payload = get_valid_payload()
-    payload["reported_at"] = (datetime.now(timezone.utc) + timedelta(minutes=3)).isoformat()
-    assert ReportPutRequest(**payload)
+    target_dt = datetime.now(timezone.utc) + timedelta(minutes=minutes_offset)
+    payload["reported_at"] = target_dt.isoformat()
+
+    if should_accept:
+        req = ReportPutRequest(**payload)
+        parsed_dt = (
+            req.reported_at
+            if isinstance(req.reported_at, datetime)
+            else datetime.fromisoformat(req.reported_at)
+        )
+        assert parsed_dt.tzinfo is not None
+        assert parsed_dt.utcoffset() == timedelta(0)
+        assert parsed_dt == target_dt
+    else:
+        with pytest.raises(ValidationError) as exc:
+            ReportPutRequest(**payload)
+        assert any(e["loc"][-1] == "reported_at" for e in exc.value.errors())
 
 
 @pytest.mark.parametrize(

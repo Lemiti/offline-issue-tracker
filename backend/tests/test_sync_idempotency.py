@@ -269,4 +269,6 @@ def test_simulated_integrity_error_race_resolves_to_200(test_db: Session):
     # 4. Assert the database session is still usable afterwards
     stored_check = test_db.execute(select(Report).where(Report.id == report_id)).scalar_one_or_none()
     assert stored_check is not None
+    assert stored_check.id == report_id
+    assert stored_check.description == payload_dict["description"]
     test_db.commit()
