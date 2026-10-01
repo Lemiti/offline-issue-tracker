@@ -1,201 +1,312 @@
 import { useState } from 'react';
-import { getReportEvents, submitReport } from '../store';
-import { Role, Status, SyncState, type Report, type ReportEvent } from '../types';
+import { submitReport } from '../store';
+import { Category, Priority, Role, Status, SyncState, type Report } from '../types';
+import { CategoryBadge, PriorityBadge, StatusBadge, SyncStateBadge } from './Badges';
 
 interface ReportListProps {
   reports: Report[];
   role: Role;
   onReportUpdated: () => void;
+  onSelectReport: (report: Report) => void;
+  onRetryFailed?: (id: string) => Promise<void>;
 }
 
-export function ReportList({ reports, role, onReportUpdated }: ReportListProps) {
-  const [selectedReportEvents, setSelectedReportEvents] = useState<{
-    reportId: string;
-    events: ReportEvent[];
-  } | null>(null);
+export function ReportList({
+  reports,
+  role,
+  onReportUpdated,
+  onSelectReport,
+  onRetryFailed,
+}: ReportListProps) {
   const [actionError, setActionError] = useState<string | null>(null);
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  // Filters (FR-VEW-4)
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [priorityFilter, setPriorityFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [syncStateFilter, setSyncStateFilter] = useState<string>('all');
 
   const handleSubmitDraft = async (reportId: string) => {
     setActionError(null);
+    setSubmittingId(reportId);
     try {
       await submitReport(reportId);
       onReportUpdated();
     } catch (err: any) {
       setActionError(err.message || 'Failed to submit draft.');
+    } finally {
+      setSubmittingId(null);
     }
   };
 
-  const handleToggleEvents = async (reportId: string) => {
-    if (selectedReportEvents && selectedReportEvents.reportId === reportId) {
-      setSelectedReportEvents(null);
-      return;
-    }
-
+  const handleRetry = async (reportId: string) => {
+    if (!onRetryFailed) return;
+    setActionError(null);
+    setRetryingId(reportId);
     try {
-      const events = await getReportEvents(reportId);
-      setSelectedReportEvents({ reportId, events });
+      await onRetryFailed(reportId);
+      onReportUpdated();
     } catch (err: any) {
-      setActionError(err.message || 'Failed to load report events.');
+      setActionError(err.message || 'Failed to retry delivery.');
+    } finally {
+      setRetryingId(null);
     }
   };
 
-  const renderSyncBadge = (report: Report) => {
-    switch (report.sync_state) {
-      case SyncState.PENDING:
-        return (
-          <span
-            style={{
-              padding: '0.2rem 0.5rem',
-              borderRadius: '4px',
-              backgroundColor: '#fff7e6',
-              border: '1px solid #ffd591',
-              color: '#d46b08',
-              fontWeight: 'bold',
-            }}
-          >
-            Not synchronized
-          </span>
-        );
-      case SyncState.SYNCHRONIZED:
-        return (
-          <span
-            style={{
-              padding: '0.2rem 0.5rem',
-              borderRadius: '4px',
-              backgroundColor: '#f6ffed',
-              border: '1px solid #b7eb8f',
-              color: '#389e0d',
-              fontWeight: 'bold',
-            }}
-          >
-            Synchronized
-          </span>
-        );
-      case SyncState.FAILED:
-        return (
-          <span
-            style={{
-              padding: '0.2rem 0.5rem',
-              borderRadius: '4px',
-              backgroundColor: '#fff1f0',
-              border: '1px solid #ffa39e',
-              color: '#cf1322',
-              fontWeight: 'bold',
-            }}
-          >
-            Sync Failed{report.last_error ? `: ${report.last_error}` : ''}
-          </span>
-        );
-      default:
-        return <span>{report.sync_state}</span>;
-    }
-  };
+  // Filter application
+  const filteredReports = reports.filter((r) => {
+    if (categoryFilter !== 'all' && r.category !== categoryFilter) return false;
+    if (priorityFilter !== 'all' && r.priority !== priorityFilter) return false;
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+    if (syncStateFilter !== 'all' && r.sync_state !== syncStateFilter) return false;
+    return true;
+  });
 
   return (
-    <section>
-      <h2>Field Reports ({reports.length})</h2>
+    <section aria-labelledby="local-reports-title">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <h2 id="local-reports-title" style={{ margin: 0 }}>
+          Local Reports ({filteredReports.length} of {reports.length})
+        </h2>
+      </div>
 
       {actionError && (
-        <div style={{ backgroundColor: '#fff1f0', border: '1px solid #ffa39e', color: '#cf1322', padding: '0.75rem', marginBottom: '1rem', borderRadius: '4px' }}>
+        <div
+          role="alert"
+          style={{
+            backgroundColor: '#fff1f0',
+            border: '1px solid #ffa39e',
+            color: '#cf1322',
+            padding: '0.75rem',
+            marginBottom: '1rem',
+            borderRadius: '4px',
+          }}
+        >
           {actionError}
         </div>
       )}
 
-      {reports.length === 0 ? (
-        <p style={{ color: '#666' }}>No reports recorded locally yet.</p>
+      {/* Filter controls */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '0.75rem',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          backgroundColor: '#f8f9fa',
+          padding: '0.75rem 1rem',
+          borderRadius: '4px',
+          marginBottom: '1.25rem',
+        }}
+      >
+        <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Filters:</span>
+
+        <div>
+          <label htmlFor="filter-cat" style={{ fontSize: '0.85rem', marginRight: '0.3rem' }}>
+            Category:
+          </label>
+          <select
+            id="filter-cat"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            style={{ padding: '0.3rem' }}
+          >
+            <option value="all">All Categories</option>
+            {Object.values(Category).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="filter-prio" style={{ fontSize: '0.85rem', marginRight: '0.3rem' }}>
+            Priority:
+          </label>
+          <select
+            id="filter-prio"
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+            style={{ padding: '0.3rem' }}
+          >
+            <option value="all">All Priorities</option>
+            {Object.values(Priority).map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="filter-status" style={{ fontSize: '0.85rem', marginRight: '0.3rem' }}>
+            Status:
+          </label>
+          <select
+            id="filter-status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ padding: '0.3rem' }}
+          >
+            <option value="all">All Statuses</option>
+            {Object.values(Status).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="filter-sync" style={{ fontSize: '0.85rem', marginRight: '0.3rem' }}>
+            Sync State:
+          </label>
+          <select
+            id="filter-sync"
+            value={syncStateFilter}
+            onChange={(e) => setSyncStateFilter(e.target.value)}
+            style={{ padding: '0.3rem' }}
+          >
+            <option value="all">All Sync States</option>
+            <option value={SyncState.PENDING}>Not synchronized (Pending)</option>
+            <option value={SyncState.SYNCHRONIZED}>Synchronized</option>
+            <option value={SyncState.FAILED}>Sync Failed</option>
+          </select>
+        </div>
+      </div>
+
+      {filteredReports.length === 0 ? (
+        <p style={{ color: '#666' }}>No matching reports recorded locally.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {reports.map((report) => {
-            const isEventsOpen = selectedReportEvents?.reportId === report.id;
-
-            return (
+          {filteredReports.map((report) => (
+            <article
+              key={report.id}
+              style={{
+                border: '1px solid #d9d9d9',
+                borderRadius: '4px',
+                padding: '1rem',
+                backgroundColor: report.status === Status.DRAFT ? '#fafafa' : '#ffffff',
+              }}
+            >
+              {/* Header with visual distinction badges */}
               <div
-                key={report.id}
                 style={{
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  padding: '1rem',
-                  backgroundColor: report.status === Status.DRAFT ? '#fafafa' : '#ffffff',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem',
+                  marginBottom: '0.5rem',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ fontWeight: 'bold', fontSize: '1.05rem' }}>{report.category}</span>
-                    <span style={{ fontSize: '0.85rem', color: '#555' }}>Priority: <strong>{report.priority}</strong></span>
-                    <span style={{ fontSize: '0.85rem', color: '#555' }}>Status: <strong>{report.status}</strong></span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <CategoryBadge category={report.category} />
+                  <PriorityBadge priority={report.priority} />
+                  <StatusBadge status={report.status} />
+                  <SyncStateBadge syncState={report.sync_state} lastError={report.last_error} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onSelectReport(report)}
+                  style={{
+                    padding: '0.35rem 0.75rem',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    backgroundColor: '#fff',
+                    border: '1px solid #ccc',
+                    borderRadius: '3px',
+                  }}
+                >
+                  View Details
+                </button>
+              </div>
+
+              {/* Description */}
+              <p style={{ margin: '0.5rem 0', whiteSpace: 'pre-wrap' }}>{report.description}</p>
+
+              {/* Fields */}
+              <div style={{ fontSize: '0.85rem', color: '#555', lineHeight: '1.4' }}>
+                <div><strong>Location:</strong> {report.location_text}</div>
+                {report.latitude !== null && report.longitude !== null && (
+                  <div><strong>Coordinates:</strong> {report.latitude}, {report.longitude}</div>
+                )}
+                <div><strong>Reported:</strong> {new Date(report.reported_at).toLocaleString()}</div>
+                {report.reporter_name && <div><strong>Reporter:</strong> {report.reporter_name}</div>}
+                <div style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.2rem' }}>ID: {report.id}</div>
+              </div>
+
+              {/* Failed report reason banner and Retry button */}
+              {report.sync_state === SyncState.FAILED && (
+                <div
+                  style={{
+                    backgroundColor: '#fff1f0',
+                    border: '1px solid #ffa39e',
+                    padding: '0.6rem 0.85rem',
+                    borderRadius: '4px',
+                    marginTop: '0.75rem',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <div style={{ fontSize: '0.85rem', color: '#cf1322' }}>
+                    <strong>Failure reason:</strong> {report.last_error || 'Delivery failed'}
                   </div>
-                  <div>{renderSyncBadge(report)}</div>
-                </div>
-
-                <p style={{ margin: '0.5rem 0', whiteSpace: 'pre-wrap' }}>{report.description}</p>
-
-                <div style={{ fontSize: '0.85rem', color: '#555', marginTop: '0.5rem', lineHeight: '1.4' }}>
-                  <div><strong>Location:</strong> {report.location_text}</div>
-                  {report.latitude !== null && report.longitude !== null && (
-                    <div><strong>Coordinates:</strong> {report.latitude}, {report.longitude}</div>
-                  )}
-                  <div><strong>Reported at:</strong> {new Date(report.reported_at).toLocaleString()}</div>
-                  {report.reporter_name && <div><strong>Reporter:</strong> {report.reporter_name}</div>}
-                  <div style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.25rem' }}>ID: {report.id}</div>
-                </div>
-
-                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  {report.status === Status.DRAFT && role === Role.FIELD_WORKER && (
+                  {onRetryFailed && (
                     <button
                       type="button"
-                      onClick={() => handleSubmitDraft(report.id)}
+                      onClick={() => handleRetry(report.id)}
+                      disabled={retryingId === report.id}
                       style={{
-                        padding: '0.35rem 0.75rem',
-                        backgroundColor: '#0066cc',
+                        padding: '0.3rem 0.75rem',
+                        backgroundColor: '#cf1322',
                         color: '#fff',
                         border: 'none',
                         borderRadius: '3px',
                         cursor: 'pointer',
                         fontSize: '0.85rem',
+                        fontWeight: 'bold',
                       }}
                     >
-                      Submit Draft
+                      {retryingId === report.id ? 'Retrying...' : 'Retry Delivery'}
                     </button>
                   )}
+                </div>
+              )}
 
+              {/* Draft Submission */}
+              {report.status === Status.DRAFT && role === Role.FIELD_WORKER && (
+                <div style={{ marginTop: '0.75rem' }}>
                   <button
                     type="button"
-                    onClick={() => handleToggleEvents(report.id)}
+                    onClick={() => handleSubmitDraft(report.id)}
+                    disabled={submittingId === report.id}
                     style={{
-                      padding: '0.35rem 0.75rem',
-                      backgroundColor: '#f0f0f0',
-                      border: '1px solid #ccc',
+                      padding: '0.35rem 0.8rem',
+                      backgroundColor: '#0958d9',
+                      color: '#fff',
+                      border: 'none',
                       borderRadius: '3px',
                       cursor: 'pointer',
                       fontSize: '0.85rem',
+                      fontWeight: 'bold',
                     }}
                   >
-                    {isEventsOpen ? 'Hide History' : 'View History'}
+                    {submittingId === report.id ? 'Submitting...' : 'Submit Draft'}
                   </button>
                 </div>
-
-                {isEventsOpen && (
-                  <div style={{ marginTop: '0.75rem', backgroundColor: '#f9f9f9', padding: '0.75rem', borderRadius: '4px', border: '1px solid #eee' }}>
-                    <h4 style={{ margin: '0 0 0.5rem 0' }}>Report History Events ({selectedReportEvents.events.length})</h4>
-                    {selectedReportEvents.events.length === 0 ? (
-                      <div style={{ fontSize: '0.85rem', color: '#666' }}>No events recorded for this report.</div>
-                    ) : (
-                      <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem' }}>
-                        {selectedReportEvents.events.map((evt) => (
-                          <li key={evt.id} style={{ marginBottom: '0.25rem' }}>
-                            <strong>{evt.type}</strong> by {evt.actor_role} at {new Date(evt.occurred_at).toLocaleTimeString()}{' '}
-                            <span style={{ color: '#888' }}>(Delivered: {evt.delivered ? 'yes' : 'no'}, UUID: {evt.id.slice(0, 8)})</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              )}
+            </article>
+          ))}
         </div>
       )}
     </section>
   );
-};
+}
