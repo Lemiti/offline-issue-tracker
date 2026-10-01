@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { createDraft, createAndSubmitReport } from '../store';
+import { useEffect, useRef, useState } from 'react';
+import { createDraft, createAndSubmitReport, updateDraft, submitReport } from '../store';
 import { Category, Priority, type Report, type ReportInput } from '../types';
 import { validateReport } from '../validation';
 
 interface ReportFormProps {
   onReportSaved: (report: Report) => void;
+  editingDraft?: Report | null;
+  onCancelEdit?: () => void;
 }
 
 function getLocalDatetimeString(date: Date = new Date()): string {
@@ -17,7 +19,7 @@ function getLocalDatetimeString(date: Date = new Date()): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
-export function ReportForm({ onReportSaved }: ReportFormProps) {
+export function ReportForm({ onReportSaved, editingDraft, onCancelEdit }: ReportFormProps) {
   const [category, setCategory] = useState<Category>(Category.WATER_POINT);
   const [priority, setPriority] = useState<Priority>(Priority.MEDIUM);
   const [description, setDescription] = useState<string>('');
@@ -32,6 +34,8 @@ export function ReportForm({ onReportSaved }: ReportFormProps) {
   const [gpsMessage, setGpsMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  const lastLoadedDraftIdRef = useRef<string | null>(null);
+
   const resetForm = () => {
     setCategory(Category.WATER_POINT);
     setPriority(Priority.MEDIUM);
@@ -43,6 +47,47 @@ export function ReportForm({ onReportSaved }: ReportFormProps) {
     setReporterName('');
     setErrors({});
     setGpsMessage(null);
+  };
+
+  useEffect(() => {
+    if (editingDraft) {
+      if (lastLoadedDraftIdRef.current !== editingDraft.id) {
+        lastLoadedDraftIdRef.current = editingDraft.id;
+        setCategory(editingDraft.category as Category);
+        setPriority(editingDraft.priority as Priority);
+        setDescription(editingDraft.description || '');
+        setLocationText(editingDraft.location_text || '');
+        setLatitude(
+          editingDraft.latitude !== null && editingDraft.latitude !== undefined
+            ? String(editingDraft.latitude)
+            : ''
+        );
+        setLongitude(
+          editingDraft.longitude !== null && editingDraft.longitude !== undefined
+            ? String(editingDraft.longitude)
+            : ''
+        );
+        const dt = editingDraft.reported_at ? new Date(editingDraft.reported_at) : new Date();
+        setReportedAt(isNaN(dt.getTime()) ? getLocalDatetimeString() : getLocalDatetimeString(dt));
+        setReporterName(editingDraft.reporter_name || '');
+        setErrors({});
+        setGpsMessage(null);
+      }
+    } else {
+      if (lastLoadedDraftIdRef.current !== null) {
+        lastLoadedDraftIdRef.current = null;
+        resetForm();
+      }
+    }
+  }, [editingDraft]);
+
+  const handleCancel = () => {
+    lastLoadedDraftIdRef.current = null;
+    resetForm();
+    setStatusMessage(null);
+    if (onCancelEdit) {
+      onCancelEdit();
+    }
   };
 
   const handleCaptureLocation = () => {
@@ -97,16 +142,34 @@ export function ReportForm({ onReportSaved }: ReportFormProps) {
 
     try {
       let savedReport: Report;
-      if (submitImmediately) {
-        savedReport = await createAndSubmitReport(input);
-        setStatusMessage(`Report ${savedReport.id.slice(0, 8)} submitted locally (Not synchronized).`);
+      if (editingDraft) {
+        if (submitImmediately) {
+          await updateDraft(editingDraft.id, input);
+          savedReport = await submitReport(editingDraft.id);
+          setStatusMessage(`Report ${savedReport.id.slice(0, 8)} submitted locally (Not synchronized).`);
+          lastLoadedDraftIdRef.current = null;
+          resetForm();
+          if (onCancelEdit) onCancelEdit();
+          onReportSaved(savedReport);
+        } else {
+          savedReport = await updateDraft(editingDraft.id, input);
+          setStatusMessage(`Draft ${savedReport.id.slice(0, 8)} updated locally. You can continue editing or submit when ready.`);
+          onReportSaved(savedReport);
+        }
       } else {
-        savedReport = await createDraft(input);
-        setStatusMessage(`Draft ${savedReport.id.slice(0, 8)} saved locally.`);
+        if (submitImmediately) {
+          savedReport = await createAndSubmitReport(input);
+          setStatusMessage(`Report ${savedReport.id.slice(0, 8)} submitted locally (Not synchronized).`);
+          lastLoadedDraftIdRef.current = null;
+          resetForm();
+          onReportSaved(savedReport);
+        } else {
+          savedReport = await createDraft(input);
+          setStatusMessage(`Draft ${savedReport.id.slice(0, 8)} saved locally. You can continue editing or submit when ready.`);
+          lastLoadedDraftIdRef.current = savedReport.id;
+          onReportSaved(savedReport);
+        }
       }
-
-      resetForm();
-      onReportSaved(savedReport);
     } catch (err: any) {
       setErrors({ form: err.message || 'Failed to save report.' });
     }
@@ -114,7 +177,63 @@ export function ReportForm({ onReportSaved }: ReportFormProps) {
 
   return (
     <section style={{ border: '1px solid #ccc', padding: '1.25rem', borderRadius: '4px', marginBottom: '2rem' }}>
-      <h2 style={{ marginTop: 0 }}>New Field Report</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <h2 style={{ margin: 0 }}>
+          {editingDraft ? `Edit Draft Report (${editingDraft.id.slice(0, 8)})` : 'New Field Report'}
+        </h2>
+        {editingDraft && (
+          <span
+            style={{
+              padding: '0.2rem 0.6rem',
+              borderRadius: '4px',
+              backgroundColor: '#fffbe6',
+              border: '1px solid #ffe58f',
+              color: '#d48806',
+              fontSize: '0.85rem',
+              fontWeight: 'bold',
+            }}
+          >
+            Draft Mode
+          </span>
+        )}
+      </div>
+
+      {editingDraft && (
+        <div
+          style={{
+            backgroundColor: '#e6f4ff',
+            border: '1px solid #91caff',
+            padding: '0.75rem 1rem',
+            marginBottom: '1rem',
+            borderRadius: '4px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.5rem',
+          }}
+        >
+          <div style={{ fontSize: '0.9rem', color: '#0958d9' }}>
+            <strong>Editing Draft:</strong> You can continue modifying details below and update the draft or submit it.
+          </div>
+          <button
+            type="button"
+            onClick={handleCancel}
+            style={{
+              padding: '0.35rem 0.75rem',
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              backgroundColor: '#fff',
+              border: '1px solid #91caff',
+              borderRadius: '3px',
+              color: '#0958d9',
+              fontWeight: 'bold',
+            }}
+          >
+            Cancel Edit / New Report
+          </button>
+        </div>
+      )}
 
       {statusMessage && (
         <div style={{ backgroundColor: '#e6ffed', border: '1px solid #b7eb8f', padding: '0.75rem', marginBottom: '1rem', borderRadius: '4px' }}>
@@ -263,21 +382,52 @@ export function ReportForm({ onReportSaved }: ReportFormProps) {
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={() => handleSave(false)}
-            style={{ padding: '0.6rem 1.25rem', cursor: 'pointer', backgroundColor: '#f0f0f0', border: '1px solid #ccc' }}
+            style={{
+              padding: '0.6rem 1.25rem',
+              cursor: 'pointer',
+              backgroundColor: editingDraft ? '#faad14' : '#f0f0f0',
+              color: editingDraft ? '#000' : '#1a1a1a',
+              border: editingDraft ? '1px solid #d48806' : '1px solid #ccc',
+              borderRadius: '4px',
+              fontWeight: editingDraft ? 'bold' : 'normal',
+            }}
           >
-            Save as Draft
+            {editingDraft ? 'Update Draft' : 'Save as Draft'}
           </button>
           <button
             type="button"
             onClick={() => handleSave(true)}
-            style={{ padding: '0.6rem 1.25rem', cursor: 'pointer', backgroundColor: '#0066cc', color: '#fff', border: 'none' }}
+            style={{
+              padding: '0.6rem 1.25rem',
+              cursor: 'pointer',
+              backgroundColor: '#0066cc',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '4px',
+              fontWeight: 'bold',
+            }}
           >
             Submit Report
           </button>
+          {editingDraft && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              style={{
+                padding: '0.6rem 1.25rem',
+                cursor: 'pointer',
+                backgroundColor: '#f0f0f0',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+              }}
+            >
+              Cancel Edit
+            </button>
+          )}
         </div>
       </form>
     </section>

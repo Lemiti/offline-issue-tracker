@@ -104,6 +104,62 @@ describe('Local Report Store (store.ts)', () => {
     ).rejects.toThrow('Submitted reports are read-only and cannot be edited.');
   });
 
+  it('allows field worker to continuously update a draft until submission', async () => {
+    // 1. Initial draft creation
+    const draft = await createDraft(
+      {
+        category: Category.WATER_POINT,
+        description: 'Leaking pipe near school.',
+        location_text: 'School street',
+        priority: Priority.LOW,
+      },
+      testDb
+    );
+    expect(draft.status).toBe(Status.DRAFT);
+    expect(draft.priority).toBe(Priority.LOW);
+
+    // 2. Field worker continues working on the draft: adds GPS coordinates and reporter name
+    const update1 = await updateDraft(
+      draft.id,
+      {
+        latitude: -1.286389,
+        longitude: 36.817223,
+        reporter_name: 'Worker Alex',
+      },
+      testDb
+    );
+    expect(update1.status).toBe(Status.DRAFT);
+    expect(update1.latitude).toBe(-1.286389);
+    expect(update1.longitude).toBe(36.817223);
+    expect(update1.reporter_name).toBe('Worker Alex');
+    expect(update1.description).toBe('Leaking pipe near school.');
+
+    // 3. Field worker refines description and escalates priority
+    const update2 = await updateDraft(
+      draft.id,
+      {
+        description: 'Burst main water pipe flooding classroom foundation.',
+        priority: Priority.CRITICAL,
+      },
+      testDb
+    );
+    expect(update2.status).toBe(Status.DRAFT);
+    expect(update2.priority).toBe(Priority.CRITICAL);
+    expect(update2.description).toBe('Burst main water pipe flooding classroom foundation.');
+    expect(update2.latitude).toBe(-1.286389);
+
+    // 4. Finally, field worker submits the updated draft
+    const submitted = await submitReport(draft.id, testDb);
+    expect(submitted.status).toBe(Status.SUBMITTED);
+    expect(submitted.priority).toBe(Priority.CRITICAL);
+    expect(submitted.description).toBe('Burst main water pipe flooding classroom foundation.');
+
+    // 5. Post-submission modifications are strictly blocked
+    await expect(
+      updateDraft(draft.id, { description: 'Cannot change once submitted' }, testDb)
+    ).rejects.toThrow('Submitted reports are read-only and cannot be edited.');
+  });
+
   it('submit writes expected local created and submitted events with their own UUIDs', async () => {
     // Test creating draft then submitting
     const draft = await createDraft(

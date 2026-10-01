@@ -6,7 +6,7 @@ import { ReportList } from './components/ReportList';
 import { db } from './db';
 import { listReports } from './store';
 import { syncEngine } from './syncEngine';
-import { Role, SyncState, type Report } from './types';
+import { Role, Status, SyncState, type Report } from './types';
 
 export function App() {
   const [role, setRole] = useState<Role>(Role.FIELD_WORKER);
@@ -17,6 +17,7 @@ export function App() {
   );
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [editingDraft, setEditingDraft] = useState<Report | null>(null);
 
   const loadLocalData = async () => {
     try {
@@ -34,6 +35,16 @@ export function App() {
         if (!prev) return null;
         const updated = allReports.find((r) => r.id === prev.id);
         return updated || prev;
+      });
+
+      // If currently edited draft is no longer Draft status (e.g. submitted elsewhere or deleted), clear it
+      setEditingDraft((prev) => {
+        if (!prev) return null;
+        const current = allReports.find((r) => r.id === prev.id);
+        if (!current || current.status !== Status.DRAFT) {
+          return null;
+        }
+        return prev;
       });
     } catch (err) {
       console.error('Failed to load local reports from IndexedDB:', err);
@@ -95,6 +106,26 @@ export function App() {
       setIsSyncing(false);
       await loadLocalData();
     }
+  };
+
+  const handleReportSaved = async (savedReport: Report) => {
+    await loadLocalData();
+    if (savedReport.status === Status.DRAFT) {
+      setEditingDraft(savedReport);
+    } else {
+      setEditingDraft(null);
+    }
+  };
+
+  const handleEditDraft = (draft: Report) => {
+    setEditingDraft(draft);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingDraft(null);
   };
 
   return (
@@ -205,7 +236,13 @@ export function App() {
               <select
                 id="role-switcher"
                 value={role}
-                onChange={(e) => setRole(e.target.value as Role)}
+                onChange={(e) => {
+                  const newRole = e.target.value as Role;
+                  setRole(newRole);
+                  if (newRole !== Role.FIELD_WORKER) {
+                    setEditingDraft(null);
+                  }
+                }}
                 style={{
                   padding: '0.35rem 0.6rem',
                   fontSize: '0.85rem',
@@ -225,13 +262,19 @@ export function App() {
       <main>
         {role === Role.FIELD_WORKER ? (
           <div>
-            <ReportForm onReportSaved={loadLocalData} />
+            <ReportForm
+              onReportSaved={handleReportSaved}
+              editingDraft={editingDraft}
+              onCancelEdit={handleCancelEdit}
+            />
             <ReportList
               reports={reports}
               role={role}
               onReportUpdated={loadLocalData}
               onSelectReport={(r) => setSelectedReport(r)}
               onRetryFailed={handleRetryFailed}
+              onEditDraft={handleEditDraft}
+              editingDraftId={editingDraft?.id}
             />
           </div>
         ) : (
@@ -251,6 +294,7 @@ export function App() {
           isOnline={isOnline}
           onClose={() => setSelectedReport(null)}
           onRetry={handleRetryFailed}
+          onEditDraft={role === Role.FIELD_WORKER ? handleEditDraft : undefined}
         />
       )}
     </div>

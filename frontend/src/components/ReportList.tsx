@@ -9,6 +9,8 @@ interface ReportListProps {
   onReportUpdated: () => void;
   onSelectReport: (report: Report) => void;
   onRetryFailed?: (id: string) => Promise<void>;
+  onEditDraft?: (report: Report) => void;
+  editingDraftId?: string | null;
 }
 
 export function ReportList({
@@ -17,6 +19,8 @@ export function ReportList({
   onReportUpdated,
   onSelectReport,
   onRetryFailed,
+  onEditDraft,
+  editingDraftId,
 }: ReportListProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
@@ -186,10 +190,10 @@ export function ReportList({
             <article
               key={report.id}
               style={{
-                border: '1px solid #d9d9d9',
+                border: editingDraftId === report.id ? '2px solid #1677ff' : '1px solid #d9d9d9',
                 borderRadius: '4px',
                 padding: '1rem',
-                backgroundColor: report.status === Status.DRAFT ? '#fafafa' : '#ffffff',
+                backgroundColor: report.status === Status.DRAFT ? (editingDraftId === report.id ? '#f0f5ff' : '#fafafa') : '#ffffff',
               }}
             >
               {/* Header with visual distinction badges */}
@@ -281,9 +285,27 @@ export function ReportList({
                 </div>
               )}
 
-              {/* Draft Submission */}
+              {/* Draft Actions */}
               {report.status === Status.DRAFT && role === Role.FIELD_WORKER && (
-                <div style={{ marginTop: '0.75rem' }}>
+                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {onEditDraft && (
+                    <button
+                      type="button"
+                      onClick={() => onEditDraft(report)}
+                      style={{
+                        padding: '0.35rem 0.8rem',
+                        backgroundColor: '#faad14',
+                        color: '#000',
+                        border: '1px solid #d48806',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      {editingDraftId === report.id ? 'Editing Draft' : 'Edit Draft'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleSubmitDraft(report.id)}
@@ -301,6 +323,11 @@ export function ReportList({
                   >
                     {submittingId === report.id ? 'Submitting...' : 'Submit Draft'}
                   </button>
+                  {editingDraftId === report.id && (
+                    <span style={{ fontSize: '0.8rem', color: '#1677ff', fontStyle: 'italic' }}>
+                      (currently open in form above)
+                    </span>
+                  )}
                 </div>
               )}
             </article>

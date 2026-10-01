@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { getReportEvents } from '../store';
-import { SyncState, type Report, type ReportEvent } from '../types';
+import { Status, SyncState, type Report, type ReportEvent } from '../types';
 import { CategoryBadge, PriorityBadge, StatusBadge, SyncStateBadge } from './Badges';
 
 interface ReportDetailModalProps {
@@ -9,9 +9,10 @@ interface ReportDetailModalProps {
   isOnline: boolean;
   onClose: () => void;
   onRetry?: (id: string) => Promise<void>;
+  onEditDraft?: (report: Report) => void;
 }
 
-export function ReportDetailModal({ report, isOnline, onClose, onRetry }: ReportDetailModalProps) {
+export function ReportDetailModal({ report, isOnline, onClose, onRetry, onEditDraft }: ReportDetailModalProps) {
   const [events, setEvents] = useState<ReportEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState<boolean>(true);
   const [retrying, setRetrying] = useState<boolean>(false);
@@ -335,10 +336,32 @@ export function ReportDetailModal({ report, isOnline, onClose, onRetry }: Report
             padding: '0.75rem 1.25rem',
             borderTop: '1px solid #eee',
             display: 'flex',
-            justifyContent: 'flex-end',
+            justifyContent: report.status === Status.DRAFT && onEditDraft ? 'space-between' : 'flex-end',
+            alignItems: 'center',
             backgroundColor: '#fafafa',
           }}
         >
+          {report.status === Status.DRAFT && onEditDraft && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onEditDraft(report);
+              }}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: '#faad14',
+                color: '#000',
+                border: '1px solid #d48806',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '0.85rem',
+              }}
+            >
+              Edit Draft
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}

@@ -3,7 +3,7 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
+| **Version** | 1.1 |
 | **Date** | October 1, 2026 |
 | **Status** | Final for implementation |
 
@@ -19,7 +19,7 @@ This SRS defines the requirements for a small application that lets field worker
 ### 1.2 Scope
 The system lets field workers create and view reports without a network connection, ensures those reports are delivered to a central record once connectivity returns without loss or duplication, and lets coordinators manage each report through a defined status workflow with a complete history.
 
-Out of scope: user authentication, push notifications, file or photo attachments, multi-language support, and production deployment.
+Out of scope: user authentication, push notifications, file or photo attachments, multi-language support, production deployment, device GPS access, reopening of closed reports, post-submission editing by field workers, and detection of similar reports submitted independently by different workers.
 
 ### 1.3 Definitions
 
@@ -57,12 +57,12 @@ The brief leaves several points open. The following decisions apply throughout t
 | ID | Topic | Assumption |
 |---|---|---|
 | A-1 | Drafts | A Draft is private to its author and not visible to coordinators. A report becomes visible to coordinators once it is Submitted and synchronized. |
-| A-2 | Duplicates | A retried delivery of the same report must never create a second record (mandatory). Reports that look alike are flagged as *possible duplicates* for coordinator review but are not blocked. |
-| A-3 | Conflicts | If a report was changed in the central record while the same report was edited offline, the conflict is shown to the user with both versions. Nothing is overwritten silently. The central record is kept unless the user chooses otherwise. |
-| A-4 | Editing after submission | A field worker may edit report content only while the report is Draft or Submitted. After that, only a coordinator may edit. |
-| A-5 | Reopening | A coordinator may reopen a Resolved report (back to In Progress) and must give a reason. Reopening does not create a new report. |
-| A-6 | Rejected | Rejected is final; a rejected report cannot be reopened. A new report must be filed instead. |
-| A-7 | Coordinator offline | Coordinator actions (status changes, coordinator edits) require connectivity. Offline support is required for field workers only. |
+| A-2 | Duplicates | A retried delivery of the same locally created report must never create a second record, including when a delivery succeeded but the confirmation was lost and the report is sent again (mandatory). Detecting similar reports submitted independently by different workers is optional and out of scope. |
+| A-3 | Conflicts | Because field workers cannot edit a report after it is submitted (A-4), local and server edit conflicts cannot arise in the required scope. How such conflicts would be detected and resolved if post-submission editing were added is explained in the README. |
+| A-4 | Editing | A field worker may edit a report only while it is a local Draft. Once Submitted, it is read-only for the field worker. Coordinators change status only and do not edit report content. No re-review workflow exists. |
+| A-5 | Resolved | Resolved is a terminal state. Reopening is not supported. |
+| A-6 | Rejected | Rejected is a terminal state. A new report must be filed instead. |
+| A-7 | Coordinator offline | Coordinator actions (status changes) require connectivity. Offline creation, persistence, retry, and synchronization are required for field workers only. |
 | A-8 | Time | The reported date/time is the time the problem was recorded on the field worker's device. |
 | A-9 | Deletion | Reports cannot be deleted. Mistaken reports are Rejected. |
 
@@ -77,8 +77,8 @@ The brief leaves several points open. The following decisions apply throughout t
 | FR-CRT-1 | The system shall allow a field worker to create a report containing: category, description, location, priority, status, and date/time reported. |
 | FR-CRT-2 | The category shall be one of: Water point, Equipment damage, Service interruption, Safety concern, Maintenance. |
 | FR-CRT-3 | The priority shall be one of: Low, Medium, High, Critical. |
-| FR-CRT-4 | The location shall be entered as free text and may additionally include coordinates (latitude and longitude). |
-| FR-CRT-5 | The system shall offer to capture the device's coordinates, and shall allow the report to be created if permission is denied or coordinates are unavailable. |
+| FR-CRT-4 | The location shall be entered as validated free text and may additionally include coordinates (latitude and longitude) entered manually. |
+| FR-CRT-5 | Coordinates shall be optional and device GPS access shall not be required; a report shall always be creatable with free-text location alone. |
 | FR-CRT-6 | The system shall record the date/time reported automatically and shall allow the field worker to adjust it. |
 | FR-CRT-7 | A new report shall start in Draft, and the field worker shall be able to submit it. |
 | FR-CRT-8 | The system shall allow an optional reporter name. |
@@ -116,9 +116,9 @@ The brief leaves several points open. The following decisions apply throughout t
 | FR-SYN-6 | A report shall not be removed from the device or have its data discarded until the central record has confirmed receipt. |
 | FR-SYN-7 | A Failed report shall display the reason for failure and shall keep all of its data. |
 | FR-SYN-8 | If synchronization is interrupted (connection lost, application closed), the affected reports shall remain Pending and shall be resent later. |
-| FR-SYN-9 | If the central record contains a newer change to the same report, the user shall be informed of the conflict and shown both versions (see A-3). |
+| FR-SYN-9 | Once a report has been submitted, the system shall prevent the field worker from editing it, so that the local and central versions cannot diverge through field-worker edits (see A-3, A-4). |
 | FR-SYN-10 | Only one synchronization run shall operate at a time, so that repeated triggers do not produce duplicate or interleaved deliveries. |
-| FR-SYN-11 | The system shall flag reports that appear to be duplicates of existing reports (same category, similar location, close in time) for coordinator review (see A-2). |
+| FR-SYN-11 | *Optional:* the system may flag reports that appear to be similar to existing reports for coordinator review (see A-2). |
 
 ### 3.5 Status workflow (WFL)
 
@@ -127,7 +127,7 @@ The brief leaves several points open. The following decisions apply throughout t
 | FR-WFL-1 | The system shall support the statuses Draft, Submitted, Assigned, In Progress, Resolved, and Rejected. |
 | FR-WFL-2 | Status changes shall be allowed only as listed in section 4.1. |
 | FR-WFL-3 | An invalid status change shall be refused, the status shall remain unchanged, a clear message shall be shown, and the attempt shall be recorded in history. |
-| FR-WFL-4 | Rejecting a report and reopening a Resolved report shall require a reason. |
+| FR-WFL-4 | Rejecting a report shall require a reason. |
 | FR-WFL-5 | The user interface shall offer only the status changes that are currently valid for the user's role. |
 | FR-WFL-6 | Two coordinators changing the same report at the same time shall not corrupt it: one change shall succeed and the other shall be told the report has changed. |
 
@@ -172,18 +172,15 @@ The brief leaves several points open. The following decisions apply throughout t
 | Assigned | In Progress | Coordinator | No |
 | Assigned | Rejected | Coordinator | Yes |
 | In Progress | Resolved | Coordinator | No |
-| Resolved | In Progress (reopen) | Coordinator | Yes |
 
-All other transitions are invalid, including any transition out of Rejected, skipping stages (for example Submitted to Resolved), and moving back to Draft.
+All other transitions are invalid, including any transition out of Resolved or Rejected, skipping stages (for example Submitted to Resolved), and moving back to Draft.
 
 ### 4.2 Editing permissions
 
 | Report status | Field Worker may edit content | Coordinator may edit content |
 |---|---|---|
 | Draft | Yes (author only) | Not visible (A-1) |
-| Submitted | Yes | Yes |
-| Assigned, In Progress | No | Yes |
-| Resolved, Rejected | No | No (Resolved must be reopened first) |
+| Submitted, Assigned, In Progress, Resolved, Rejected | No (read-only) | No (status changes only) |
 
 ### 4.3 Data safety rules
 - No report data shall be lost because of a refresh, a closed application, a lost connection, or a failed delivery.
@@ -214,7 +211,7 @@ The Verification column is completed against the actual tests as they are writte
 |---|---|---|
 | Report creation and validation | FR-CRT-1 to 8, FR-VAL-1 to 6 | Automated tests (valid and invalid input); QA checklist |
 | Offline operation | FR-OFF-1 to 5 | QA checklist (offline create, refresh, reopen); automated test of local persistence |
-| Synchronization | FR-SYN-1 to 11 | Automated tests (success, retry, interruption, duplicate retry, conflict); QA checklist |
+| Synchronization | FR-SYN-1 to 11 | Automated tests (success, retry, interruption, lost confirmation then retry with no duplicate, read-only after submit); QA checklist |
 | Status workflow | FR-WFL-1 to 6, section 4.1 | Automated tests for every valid and invalid transition |
 | Viewing | FR-VEW-1 to 6 | QA checklist |
 | History | FR-HIS-1 to 5 | Automated tests (events created for each action); QA checklist |
@@ -222,13 +219,13 @@ The Verification column is completed against the actual tests as they are writte
 
 ---
 
-## 7. Open Questions
+## 7. Clarifications Received
 
-The following questions were raised with the instructor, and no answers were provided. The assumptions in section 2.4 apply instead.
+The instructor's clarification of the required scope is reflected throughout this document:
 
-1. Does "duplicate" mean only a retried delivery, or also similar reports from different workers? *(see A-2)*
-2. If a report is edited offline while a coordinator changes it on the server, which side wins? *(see A-3)*
-3. May a field worker edit a report after it is submitted, and does that require re-review? *(see A-4)*
-4. May a Resolved report be reopened, by whom, and as the same or a new report? *(see A-5)*
-5. Do coordinators also need offline support? *(see A-7)*
-6. Is location free text, coordinates, or both, and is device GPS required? *(see FR-CRT-4, FR-CRT-5)*
+1. **Duplicates:** the mandatory rule concerns repeated delivery of the same locally created report, for example a delivery that succeeded but whose response was lost and is retried. Similar-report detection is optional (A-2).
+2. **Conflicts and editing:** field workers may edit only local Drafts; submitted reports are read-only for them; no re-review workflow is required (A-3, A-4). The README explains how version conflicts would be handled if post-submission editing were added.
+3. **Reopening:** Resolved and Rejected are terminal; reopening is not required (A-5, A-6).
+4. **Coordinators:** may be online-only (A-7).
+5. **Location:** validated free text is sufficient; coordinates are optional with a manual alternative; device GPS is not required (FR-CRT-4, FR-CRT-5).
+6. **Priorities:** additional functionality is optional and must not take priority over correctness, testing, synchronization safety, and documentation.
