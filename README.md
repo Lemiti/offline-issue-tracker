@@ -128,6 +128,8 @@ Full details (data model, API, sequence diagrams): [docs/DESIGN.md](docs/DESIGN.
 7. Syncing is single-flight so repeated triggers (online event, timer, button) cannot overlap.
 8. History events carry their own UUIDs, so a retry cannot duplicate history.
 
+If the server commits a report but the browser closes before the local update, the report stays Pending, and the retry returns 200 with the stored record, so there is no loss and no duplicate.
+
 ---
 
 ## Status workflow
@@ -230,7 +232,8 @@ UI rendering is verified through the manual checklist rather than heavy UI tests
 - No attachments or photos, no push notifications, no deployment configuration.
 - SQLite and no migrations framework; suitable for the exercise, not for production scale.
 - Offline support covers field-worker creation and viewing; coordinators need connectivity.
-- Similar-report detection is not implemented.
+- Similar-report detection across devices is not implemented.
+- The app shell loads offline only after one online visit and only in the production build (`npm run demo`), not `npm run dev`.
 - Multiple devices sharing one worker identity are not modelled.
 - Clock differences between a device and the server can affect `reported_at` plausibility checks (a small tolerance is applied).
 - Browser connectivity signals are unreliable, so the app relies on real request outcomes.
