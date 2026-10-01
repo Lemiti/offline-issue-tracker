@@ -70,8 +70,6 @@ Load the app once while online to register the service worker and precache the a
 
 The frontend expects the API at `http://localhost:8000`. Override with `VITE_API_URL` in `frontend/.env` (see `frontend/.env.example`).
 
-<!-- TODO: verify every command above on a fresh clone before submitting. -->
-
 ---
 
 ## Running the tests
@@ -233,7 +231,7 @@ UI rendering is verified through the manual checklist rather than heavy UI tests
 - SQLite and no migrations framework; suitable for the exercise, not for production scale.
 - Offline support covers field-worker creation and viewing; coordinators need connectivity.
 - Similar-report detection across devices is not implemented.
-- The app shell loads offline only after one online visit and only in the production build (`npm run demo`), not `npm run dev`.
+- The app shell loads offline only after one online visit and only in the production build (`npm run build && npm run preview`), not `npm run dev`.
 - Multiple devices sharing one worker identity are not modelled.
 - Clock differences between a device and the server can affect `reported_at` plausibility checks (a small tolerance is applied).
 - Browser connectivity signals are unreliable, so the app relies on real request outcomes.
@@ -253,17 +251,18 @@ UI rendering is verified through the manual checklist rather than heavy UI tests
 - Real authentication and per-role authorisation
 - Post-submission editing with version-based conflict resolution (see above)
 - Similar-report detection for different workers
-- End-to-end browser tests (Playwright) for the offline scenarios
+- More automated and end-to-end offline tests (Playwright)
+- UI/UX polish and accessibility review
+- Containerization (an optimized Docker image) and deployment
+- Mobile client (React Native)
 - Full offline sync queue for coordinator role
 - Migrations (Alembic) and a production database
-- Photo attachments and device GPS capture
+- Photo attachments
 - Pagination and search
 
 ---
 
 ## AI and development-tool disclosure
-
-> Fill this in from your own AI-usage log. Be specific and truthful; reviewers evaluate honesty and understanding, not the absence of AI.
 
 **Tools used:** Claude (free), Antigravity CLI (`agy`) powered by Gemini
 
@@ -275,9 +274,9 @@ UI rendering is verified through the manual checklist rather than heavy UI tests
 **What I accepted, changed, and rejected**
 - Accepted: The pure workflow state machine architecture (`backend/app/workflow.py`), the idempotent upsert logic with unique-constraint fallback handling, the headless sync engine structure with single-flight execution and exponential backoff, and Dexie IndexedDB schemas.
 - Changed: Refined prompts from Claude to strictly enforce boundary assertions instead of generic truthiness; modified the test suite to keep it modular and maintainable; updated draft management to allow workers to edit and update saved drafts prior to submission.
-- Rejected: Rejected coordinator "Reopen" action proposed in early UI drafts (since Resolved and Rejected are terminal states per SRS); rejected any soft-delete or multi-device sync logic as out of scope; rejected complex mock IndexedDB setups in favor of clean `fake-indexeddb` tests.
+- Rejected: Rejected the coordinator "Reopen" action (Resolved -> In Progress) proposed in early UI drafts to strictly enforce terminal states per SRS 4.1.
 
 **How I verified generated code**
-- Read every diff before committing; ran the automated tests (`pytest` for backend, `vitest` for frontend); walked through the manual QA checklist in both online and offline network states; tested lost-response and idempotent retry scenarios; verified production build (`npm run build`) and preview (`npm run demo`).
+- Read every diff before committing; ran the automated tests (`pytest` for backend, `vitest` for frontend); walked through the manual QA checklist in both online and offline network states; tested lost-response and idempotent retry scenarios; verified production build (`npm run build`) and preview (`npm run build && npm run preview`).
 
 I understand and take responsibility for all submitted code.

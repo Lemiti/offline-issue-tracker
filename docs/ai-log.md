@@ -29,4 +29,4 @@ Throughout this project, AI was used in a collaborative loop between two complem
 
 * **Accepted:** Pure state machine without I/O; Dexie-based transactional local store; UUIDs doubling as idempotency keys; headless sync engine with single-flight locking and exponential backoff; Vite PWA Workbox precaching for the offline app shell.
 * **Changed:** Refined prompts to enforce strict boundary assertions instead of generic truthiness; simplified overly verbose test files; enhanced draft workflow to allow workers to edit and update saved drafts prior to submission.
-* **Rejected:** Rejected "Reopen" action proposed in early coordinator UI drafts (terminal states must offer no transitions per SRS 4.1); rejected soft deletes; rejected cross-device multi-worker sync as out of scope.
+* **Rejected:** Rejected the coordinator "Reopen" action (Resolved -> In Progress) proposed in early UI drafts to strictly enforce terminal states per SRS 4.1.
