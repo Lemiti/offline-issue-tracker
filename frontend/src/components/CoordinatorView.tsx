@@ -1,36 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { Category, Priority, Role, Status, SyncState, type Report } from '../types';
+import { getAvailableTransitions, type TransitionRule } from '../workflow';
 import { CategoryBadge, PriorityBadge, StatusBadge, SyncStateBadge } from './Badges';
 
 interface CoordinatorViewProps {
   isOnline: boolean;
   onSelectReport: (report: Report) => void;
 }
-
-interface TransitionRule {
-  to: Status;
-  label: string;
-  requiresReason: boolean;
-}
-
-const VALID_TRANSITIONS: Record<string, TransitionRule[]> = {
-  [Status.SUBMITTED]: [
-    { to: Status.ASSIGNED, label: 'Assign', requiresReason: false },
-    { to: Status.REJECTED, label: 'Reject', requiresReason: true },
-  ],
-  [Status.ASSIGNED]: [
-    { to: Status.IN_PROGRESS, label: 'Start Progress', requiresReason: false },
-    { to: Status.REJECTED, label: 'Reject', requiresReason: true },
-  ],
-  [Status.IN_PROGRESS]: [
-    { to: Status.RESOLVED, label: 'Resolve', requiresReason: false },
-  ],
-  [Status.RESOLVED]: [
-    { to: Status.IN_PROGRESS, label: 'Reopen', requiresReason: true },
-  ],
-  [Status.REJECTED]: [],
-};
 
 export function CoordinatorView({ isOnline, onSelectReport }: CoordinatorViewProps) {
   const [reports, setReports] = useState<Report[]>([]);
@@ -302,7 +279,7 @@ export function CoordinatorView({ isOnline, onSelectReport }: CoordinatorViewPro
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {reports.map((report) => {
-            const validMoves = VALID_TRANSITIONS[report.status] || [];
+            const validMoves = getAvailableTransitions(report.status);
             const isTerminal = validMoves.length === 0;
 
             return (

@@ -58,8 +58,15 @@ uvicorn app.main:app --reload    # http://localhost:8000  (API docs at /docs)
 ```bash
 cd frontend
 npm install
-npm run dev                      # http://localhost:5173
+npm run dev                      # http://localhost:5173 for development
 ```
+
+For the **offline refresh and app-shell caching demo**, build and preview the production PWA:
+```bash
+cd frontend
+npm run build && npm run preview # http://localhost:4173
+```
+Load the app once while online to register the service worker and precache the application shell, then set browser DevTools → Network → select **Offline**, and refresh the page.
 
 The frontend expects the API at `http://localhost:8000`. Override with `VITE_API_URL` in `frontend/.env` (see `frontend/.env.example`).
 
